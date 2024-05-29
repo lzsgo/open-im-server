@@ -26,6 +26,7 @@ type Notification struct {
 
 type Android struct {
 	Alert  string `json:"alert,omitempty"`
+	Title  string `json:"title,omitempty"`
 	Intent struct {
 		URL string `json:"url,omitempty"`
 	} `json:"intent,omitempty"`
@@ -43,6 +44,9 @@ type Extras struct {
 	ClientMsgID string `json:"clientMsgID"`
 }
 
+func (n *Notification) SetTitle(title string) {
+	n.Android.Title = title
+}
 func (n *Notification) SetAlert(alert string) {
 	n.Alert = alert
 	n.Android.Alert = alert

@@ -61,9 +61,10 @@ func (j *JPush) Push(ctx context.Context, userIDs []string, title, content strin
 	if opts.Signal.ClientMsgID != "" {
 		extras.ClientMsgID = opts.Signal.ClientMsgID
 	}
+	no.SetTitle(title)
 	no.IOSEnableMutableContent()
 	no.SetExtras(extras)
-	no.SetAlert(title)
+	no.SetAlert(content)
 	no.SetAndroidIntent(j.pushConf)
 
 	var msg body.Message
