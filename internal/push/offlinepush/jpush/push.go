@@ -62,6 +62,7 @@ func (j *JPush) Push(ctx context.Context, userIDs []string, title, content strin
 		extras.ClientMsgID = opts.Signal.ClientMsgID
 	}
 	no.SetTitle(title)
+	no.SetBadgeAddNum()
 	no.IOSEnableMutableContent()
 	no.SetExtras(extras)
 	no.SetAlert(content)
