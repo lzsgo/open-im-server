@@ -63,6 +63,7 @@ func (j *JPush) Push(ctx context.Context, userIDs []string, title, content strin
 	}
 	no.SetTitle(title)
 	no.SetBadgeAddNum()
+	//no.SetBadgeSetNum()
 	no.IOSEnableMutableContent()
 	no.SetExtras(extras)
 	no.SetAlert(content)

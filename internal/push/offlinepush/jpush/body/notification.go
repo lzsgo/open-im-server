@@ -28,6 +28,7 @@ type Android struct {
 	Alert       string `json:"alert,omitempty"`
 	Title       string `json:"title,omitempty"`
 	BadgeAddNum int    `json:"badge_add_num,omitempty"`
+	BadgeSetNum int    `json:"badge_set_num,omitempty"`
 	Intent      struct {
 		URL string `json:"url,omitempty"`
 	} `json:"intent,omitempty"`
@@ -50,6 +51,9 @@ func (n *Notification) SetTitle(title string) {
 }
 func (n *Notification) SetBadgeAddNum() {
 	n.Android.BadgeAddNum = 1
+}
+func (n *Notification) SetBadgeSetNum() {
+	n.Android.BadgeSetNum = 66
 }
 func (n *Notification) SetAlert(alert string) {
 	n.Alert = alert
