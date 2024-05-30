@@ -284,6 +284,9 @@ func (c *ConsumerHandler) offlinePushMsg(ctx context.Context, msg *sdkws.MsgData
 	if err != nil {
 		return err
 	}
+	if msg.ContentType == 1300 {
+		return nil
+	}
 	err = c.offlinePusher.Push(ctx, offlinePushUserIDs, title, content, opts)
 	if err != nil {
 		prommetrics.MsgOfflinePushFailedCounter.Inc()
