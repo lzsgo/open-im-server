@@ -93,7 +93,11 @@ func (g *GroupMemberMgo) SearchMember(ctx context.Context, keyword string, group
 }
 
 func (g *GroupMemberMgo) FindUserJoinedGroupID(ctx context.Context, userID string) (groupIDs []string, err error) {
+
+	return mongoutil.Find[string](ctx, g.coll, bson.M{"user_id": userID, "group_id": bson.M{"$regex": "^((?!meeting).)*$"}}, options.Find().SetProjection(bson.M{"_id": 0, "group_id": 1}))
+
 	return mongoutil.Find[string](ctx, g.coll, bson.M{"user_id": userID}, options.Find().SetProjection(bson.M{"_id": 0, "group_id": 1}))
+
 }
 
 func (g *GroupMemberMgo) TakeGroupMemberNum(ctx context.Context, groupID string) (count int64, err error) {

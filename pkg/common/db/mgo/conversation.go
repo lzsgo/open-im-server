@@ -89,6 +89,9 @@ func (c *ConversationMgo) FindUserID(ctx context.Context, userIDs []string, conv
 	)
 }
 func (c *ConversationMgo) FindUserIDAllConversationID(ctx context.Context, userID string) ([]string, error) {
+
+	return mongoutil.Find[string](ctx, c.coll, bson.M{"owner_user_id": userID, "group_id": bson.M{"$regex": "^((?!meeting).)*$"}}, options.Find().SetProjection(bson.M{"_id": 0, "conversation_id": 1}))
+
 	return mongoutil.Find[string](ctx, c.coll, bson.M{"owner_user_id": userID}, options.Find().SetProjection(bson.M{"_id": 0, "conversation_id": 1}))
 }
 
