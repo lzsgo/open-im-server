@@ -6,6 +6,8 @@ type Opts struct {
 	IOSPushSound  string
 	IOSBadgeCount bool
 	Ex            string
+	Data          string
+	IsGroup       bool
 }
 
 // Signal message id.

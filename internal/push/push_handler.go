@@ -320,7 +320,13 @@ func (c *ConsumerHandler) getOfflinePushInfos(msg *sdkws.MsgData) (title, conten
 		opts.IOSPushSound = msg.OfflinePushInfo.IOSPushSound
 		opts.Ex = msg.OfflinePushInfo.Ex
 	}
-
+	if msg.GroupID == "" {
+		opts.Data = msg.SendID
+		opts.IsGroup = false
+	} else {
+		opts.Data = msg.GroupID
+		opts.IsGroup = true
+	}
 	if msg.OfflinePushInfo != nil {
 		title = msg.OfflinePushInfo.Title
 		content = msg.OfflinePushInfo.Desc

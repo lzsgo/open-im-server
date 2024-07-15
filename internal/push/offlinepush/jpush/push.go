@@ -61,6 +61,10 @@ func (j *JPush) Push(ctx context.Context, userIDs []string, title, content strin
 	if opts.Signal.ClientMsgID != "" {
 		extras.ClientMsgID = opts.Signal.ClientMsgID
 	}
+	if opts.Data != "" {
+		extras.Data = opts.Data
+		extras.IsGroup = opts.IsGroup
+	}
 	no.SetTitle(title)
 	no.SetBadgeAddNum()
 	//no.SetBadgeSetNum()

@@ -29,9 +29,9 @@ type Android struct {
 	Title       string `json:"title,omitempty"`
 	BadgeAddNum int    `json:"badge_add_num,omitempty"`
 	BadgeSetNum int    `json:"badge_set_num,omitempty"`
-	Intent      struct {
-		URL string `json:"url,omitempty"`
-	} `json:"intent,omitempty"`
+	//Intent      struct {
+	//	URL string `json:"url,omitempty"`
+	//} `json:"intent,omitempty"`
 	Extras Extras `json:"extras"`
 }
 type Ios struct {
@@ -44,6 +44,8 @@ type Ios struct {
 
 type Extras struct {
 	ClientMsgID string `json:"clientMsgID"`
+	Data        string `json:"data"`
+	IsGroup     bool   `json:"IsGroup"`
 }
 
 func (n *Notification) SetTitle(title string) {
@@ -69,7 +71,7 @@ func (n *Notification) SetExtras(extras Extras) {
 }
 
 func (n *Notification) SetAndroidIntent(pushConf *config.Push) {
-	n.Android.Intent.URL = pushConf.JPNS.PushIntent
+	//n.Android.Intent.URL = pushConf.JPNS.PushIntent
 }
 
 func (n *Notification) IOSEnableMutableContent() {
