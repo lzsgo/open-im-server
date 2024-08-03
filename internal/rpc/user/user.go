@@ -594,9 +594,9 @@ func (s *userServer) UpdateNotificationAccountInfo(ctx context.Context, req *pbu
 
 func (s *userServer) SearchNotificationAccount(ctx context.Context, req *pbuser.SearchNotificationAccountReq) (*pbuser.SearchNotificationAccountResp, error) {
 	// Check if user is an admin
-	if err := authverify.CheckAdmin(ctx, s.config.Share.IMAdminUserID); err != nil {
-		return nil, err
-	}
+	//if err := authverify.CheckAdmin(ctx, s.config.Share.IMAdminUserID); err != nil {
+	//	return nil, err
+	//}
 
 	var users []*relation.UserModel
 	var err error
@@ -668,7 +668,8 @@ func (s *userServer) userModelToResp(users []*relation.UserModel, pagination pag
 	accounts := make([]*pbuser.NotificationAccountInfo, 0)
 	var total int64
 	for _, v := range users {
-		if v.AppMangerLevel == constant.AppNotificationAdmin && !datautil.Contain(v.UserID, s.config.Share.IMAdminUserID...) {
+		//if v.AppMangerLevel == constant.AppNotificationAdmin && !datautil.Contain(v.UserID, s.config.Share.IMAdminUserID...) {
+		if v.AppMangerLevel == constant.AppNotificationAdmin {
 			temp := &pbuser.NotificationAccountInfo{
 				UserID:   v.UserID,
 				FaceURL:  v.FaceURL,
