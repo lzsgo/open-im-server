@@ -68,7 +68,7 @@ func (c *Client) AsyncPost(ctx context.Context, command string, req callbackstru
 
 func (c *Client) post(ctx context.Context, command string, input interface{}, output callbackstruct.CallbackResp, timeout int) error {
 	ctx = mcontext.WithMustInfoCtx([]string{mcontext.GetOperationID(ctx), mcontext.GetOpUserID(ctx), mcontext.GetOpUserPlatform(ctx), mcontext.GetConnID(ctx)})
-	fullURL := c.url + "/" + command
+	fullURL := c.url + "/?command=" + command
 	log.ZInfo(ctx, "webhook", "url", fullURL, "input", input, "config", timeout)
 	operationID, _ := ctx.Value(constant.OperationID).(string)
 	b, err := c.client.Post(ctx, fullURL, map[string]string{constant.OperationID: operationID}, input, timeout)
