@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"hash/crc32"
+	"slices"
 	"strconv"
 	"time"
 
@@ -154,11 +155,21 @@ func (u *UserCacheRedis) GetUserStatus(ctx context.Context, userIDs []string) ([
 		result, err := u.rdb.HGet(ctx, key, userID).Result()
 		if err != nil {
 			if errors.Is(err, redis.Nil) {
+				// Ai bot is online
+				var status int32
+				var platformIds []int32
+				if slices.Contains([]string{"1850000001", "1850000002"}, userID) {
+					status = constant.Online
+					platformIds = []int32{5}
+				} else {
+					status = constant.Offline
+					platformIds = nil
+				}
 				// key or field does not exist
 				userStatus = append(userStatus, &user.OnlineStatus{
 					UserID:      userID,
-					Status:      constant.Offline,
-					PlatformIDs: nil,
+					Status:      status,
+					PlatformIDs: platformIds,
 				})
 
 				continue
