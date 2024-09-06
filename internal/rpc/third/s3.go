@@ -23,9 +23,13 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/openimsdk/open-im-server/v3/pkg/common/config"
+	"github.com/openimsdk/open-im-server/v3/pkg/common/storage/model"
+	"go.mongodb.org/mongo-driver/mongo"
+
 	"github.com/google/uuid"
-	"github.com/openimsdk/open-im-server/v3/pkg/common/db/table/relation"
 	"github.com/openimsdk/open-im-server/v3/pkg/common/servererrs"
+	"github.com/openimsdk/protocol/sdkws"
 	"github.com/openimsdk/protocol/third"
 	"github.com/openimsdk/tools/errs"
 	"github.com/openimsdk/tools/log"
@@ -60,7 +64,7 @@ func (t *thirdServer) InitiateMultipartUpload(ctx context.Context, req *third.In
 	result, err := t.s3dataBase.InitiateMultipartUpload(ctx, req.Hash, req.Size, t.defaultExpire, int(req.MaxParts))
 	if err != nil {
 		if haErr, ok := errs.Unwrap(err).(*cont.HashAlreadyExistsError); ok {
-			obj := &relation.ObjectModel{
+			obj := &model.Object{
 				Name:        req.Name,
 				UserID:      mcontext.GetOpUserID(ctx),
 				Hash:        req.Hash,
@@ -137,7 +141,7 @@ func (t *thirdServer) CompleteMultipartUpload(ctx context.Context, req *third.Co
 	if err != nil {
 		return nil, err
 	}
-	obj := &relation.ObjectModel{
+	obj := &model.Object{
 		Name:        req.Name,
 		UserID:      mcontext.GetOpUserID(ctx),
 		Hash:        result.Hash,
@@ -263,7 +267,7 @@ func (t *thirdServer) CompleteFormData(ctx context.Context, req *third.CompleteF
 	if info.Size > 0 && info.Size != mate.Size {
 		return nil, servererrs.ErrData.WrapMsg("file size mismatch")
 	}
-	obj := &relation.ObjectModel{
+	obj := &model.Object{
 		Name:        mate.Name,
 		UserID:      mcontext.GetOpUserID(ctx),
 		Hash:        "etag_" + info.ETag,
@@ -281,6 +285,52 @@ func (t *thirdServer) CompleteFormData(ctx context.Context, req *third.CompleteF
 
 func (t *thirdServer) apiAddress(prefix, name string) string {
 	return prefix + name
+}
+
+func (t *thirdServer) DeleteOutdatedData(ctx context.Context, req *third.DeleteOutdatedDataReq) (*third.DeleteOutdatedDataResp, error) {
+	var conf config.Third
+	expireTime := time.UnixMilli(req.ExpireTime)
+	findPagination := &sdkws.RequestPagination{
+		PageNumber: 1,
+		ShowNumber: 1000,
+	}
+	for {
+		total, models, err := t.s3dataBase.FindByExpires(ctx, expireTime, findPagination)
+		if err != nil && errs.Unwrap(err) != mongo.ErrNoDocuments {
+			return nil, errs.Wrap(err)
+		}
+		needDelObjectKeys := make([]string, 0)
+		for _, model := range models {
+			needDelObjectKeys = append(needDelObjectKeys, model.Key)
+		}
+
+		needDelObjectKeys = datautil.Distinct(needDelObjectKeys)
+		for _, key := range needDelObjectKeys {
+			count, err := t.s3dataBase.FindNotDelByS3(ctx, key, expireTime)
+			if err != nil && errs.Unwrap(err) != mongo.ErrNoDocuments {
+				return nil, errs.Wrap(err)
+			}
+			if int(count) < 1 && t.minio != nil {
+				thumbnailKey, err := t.getMinioImageThumbnailKey(ctx, key)
+				if err != nil {
+					return nil, errs.Wrap(err)
+				}
+				t.s3dataBase.DeleteObject(ctx, thumbnailKey)
+				t.s3dataBase.DelS3Key(ctx, conf.Object.Enable, needDelObjectKeys...)
+				t.s3dataBase.DeleteObject(ctx, key)
+			}
+		}
+		for _, model := range models {
+			err := t.s3dataBase.DeleteSpecifiedData(ctx, model.Engine, model.Name)
+			if err != nil {
+				return nil, errs.Wrap(err)
+			}
+		}
+		if total < int64(findPagination.ShowNumber) {
+			break
+		}
+	}
+	return &third.DeleteOutdatedDataResp{}, nil
 }
 
 type FormDataMate struct {

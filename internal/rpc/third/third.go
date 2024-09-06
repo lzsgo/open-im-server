@@ -18,11 +18,12 @@ import (
 	"context"
 	"fmt"
 	"github.com/openimsdk/open-im-server/v3/pkg/common/config"
+	"github.com/openimsdk/open-im-server/v3/pkg/common/storage/cache/redis"
+	"github.com/openimsdk/open-im-server/v3/pkg/common/storage/database/mgo"
+	"github.com/openimsdk/open-im-server/v3/pkg/localcache"
 	"time"
 
-	"github.com/openimsdk/open-im-server/v3/pkg/common/db/cache"
-	"github.com/openimsdk/open-im-server/v3/pkg/common/db/controller"
-	"github.com/openimsdk/open-im-server/v3/pkg/common/db/mgo"
+	"github.com/openimsdk/open-im-server/v3/pkg/common/storage/controller"
 	"github.com/openimsdk/open-im-server/v3/pkg/rpcclient"
 	"github.com/openimsdk/protocol/third"
 	"github.com/openimsdk/tools/db/mongoutil"
@@ -30,6 +31,7 @@ import (
 	"github.com/openimsdk/tools/discovery"
 	"github.com/openimsdk/tools/s3"
 	"github.com/openimsdk/tools/s3/cos"
+	"github.com/openimsdk/tools/s3/kodo"
 	"github.com/openimsdk/tools/s3/minio"
 	"github.com/openimsdk/tools/s3/oss"
 	"google.golang.org/grpc"
@@ -41,7 +43,9 @@ type thirdServer struct {
 	userRpcClient rpcclient.UserRpcClient
 	defaultExpire time.Duration
 	config        *Config
+	minio         *minio.Minio
 }
+
 type Config struct {
 	RpcConfig          config.Third
 	RedisConfig        config.Redis
@@ -72,29 +76,40 @@ func Start(ctx context.Context, config *Config, client discovery.SvcDiscoveryReg
 	}
 	// Select the oss method according to the profile policy
 	enable := config.RpcConfig.Object.Enable
-	var o s3.Interface
+	var (
+		o        s3.Interface
+		minioCli *minio.Minio
+	)
 	switch enable {
 	case "minio":
-		o, err = minio.NewMinio(ctx, cache.NewMinioCache(rdb), *config.MinioConfig.Build())
+		minioCli, err = minio.NewMinio(ctx, redis.NewMinioCache(rdb), *config.MinioConfig.Build())
+		o = minioCli
 	case "cos":
 		o, err = cos.NewCos(*config.RpcConfig.Object.Cos.Build())
 	case "oss":
 		o, err = oss.NewOSS(*config.RpcConfig.Object.Oss.Build())
+	case "kodo":
+		o, err = kodo.NewKodo(*config.RpcConfig.Object.Kodo.Build())
 	default:
 		err = fmt.Errorf("invalid object enable: %s", enable)
 	}
 	if err != nil {
 		return err
 	}
-	cache.InitLocalCache(&config.LocalCacheConfig)
+	localcache.InitLocalCache(&config.LocalCacheConfig)
 	third.RegisterThirdServer(server, &thirdServer{
-		thirdDatabase: controller.NewThirdDatabase(cache.NewThirdCache(rdb), logdb),
+		thirdDatabase: controller.NewThirdDatabase(redis.NewThirdCache(rdb), logdb),
 		userRpcClient: rpcclient.NewUserRpcClient(client, config.Share.RpcRegisterName.User, config.Share.IMAdminUserID),
 		s3dataBase:    controller.NewS3Database(rdb, o, s3db),
 		defaultExpire: time.Hour * 24 * 7,
 		config:        config,
+		minio:         minioCli,
 	})
 	return nil
+}
+
+func (t *thirdServer) getMinioImageThumbnailKey(ctx context.Context, name string) (string, error) {
+	return t.minio.GetImageThumbnailKey(ctx, name)
 }
 
 func (t *thirdServer) FcmUpdateToken(ctx context.Context, req *third.FcmUpdateTokenReq) (resp *third.FcmUpdateTokenResp, err error) {

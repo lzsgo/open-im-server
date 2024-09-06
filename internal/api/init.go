@@ -29,7 +29,6 @@ import (
 	"time"
 
 	kdisc "github.com/openimsdk/open-im-server/v3/pkg/common/discoveryregister"
-	ginprom "github.com/openimsdk/open-im-server/v3/pkg/common/ginprometheus"
 	"github.com/openimsdk/open-im-server/v3/pkg/common/prommetrics"
 	"github.com/openimsdk/tools/discovery"
 	"github.com/openimsdk/tools/errs"
@@ -48,10 +47,6 @@ func Start(ctx context.Context, index int, config *Config) error {
 	if err != nil {
 		return err
 	}
-	prometheusPort, err := datautil.GetElemByIndex(config.API.Prometheus.Ports, index)
-	if err != nil {
-		return err
-	}
 
 	var client discovery.SvcDiscoveryRegistry
 
@@ -62,17 +57,22 @@ func Start(ctx context.Context, index int, config *Config) error {
 	}
 
 	var (
-		netDone = make(chan struct{}, 1)
-		netErr  error
+		netDone        = make(chan struct{}, 1)
+		netErr         error
+		prometheusPort int
 	)
 
 	router := newGinRouter(client, config)
 	if config.API.Prometheus.Enable {
 		go func() {
-			p := ginprom.NewPrometheus("app", prommetrics.GetGinCusMetrics("Api"))
-			p.SetListenAddress(fmt.Sprintf(":%d", prometheusPort))
-			if err = p.Use(router); err != nil && err != http.ErrServerClosed {
-				netErr = errs.WrapMsg(err, fmt.Sprintf("prometheus start err: %d", prometheusPort))
+			prometheusPort, err = datautil.GetElemByIndex(config.API.Prometheus.Ports, index)
+			if err != nil {
+				netErr = err
+				netDone <- struct{}{}
+				return
+			}
+			if err := prommetrics.ApiInit(prometheusPort); err != nil && err != http.ErrServerClosed {
+				netErr = errs.WrapMsg(err, fmt.Sprintf("api prometheus start err: %d", prometheusPort))
 				netDone <- struct{}{}
 			}
 		}()

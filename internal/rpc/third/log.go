@@ -17,16 +17,15 @@ package third
 import (
 	"context"
 	"crypto/rand"
+	relationtb "github.com/openimsdk/open-im-server/v3/pkg/common/storage/model"
 	"time"
 
 	"github.com/openimsdk/open-im-server/v3/pkg/authverify"
-	relationtb "github.com/openimsdk/open-im-server/v3/pkg/common/db/table/relation"
 	"github.com/openimsdk/open-im-server/v3/pkg/common/servererrs"
 	"github.com/openimsdk/protocol/constant"
 	"github.com/openimsdk/protocol/third"
 	"github.com/openimsdk/tools/errs"
 	"github.com/openimsdk/tools/utils/datautil"
-	"github.com/openimsdk/tools/utils/stringutil"
 )
 
 func genLogID() string {
@@ -45,18 +44,19 @@ func genLogID() string {
 }
 
 func (t *thirdServer) UploadLogs(ctx context.Context, req *third.UploadLogsReq) (*third.UploadLogsResp, error) {
-	var dbLogs []*relationtb.LogModel
+	var dbLogs []*relationtb.Log
 	userID := ctx.Value(constant.OpUserID).(string)
 	platform := constant.PlatformID2Name[int(req.Platform)]
 	for _, fileURL := range req.FileURLs {
-		log := relationtb.LogModel{
-			Version:    req.Version,
-			SystemType: req.SystemType,
+		log := relationtb.Log{
 			Platform:   platform,
 			UserID:     userID,
 			CreateTime: time.Now(),
 			Url:        fileURL.URL,
 			FileName:   fileURL.Filename,
+			SystemType: req.SystemType,
+			Version:    req.Version,
+			Ex:         req.Ex,
 		}
 		for i := 0; i < 20; i++ {
 			id := genLogID()
@@ -70,7 +70,7 @@ func (t *thirdServer) UploadLogs(ctx context.Context, req *third.UploadLogsReq) 
 			}
 		}
 		if log.LogID == "" {
-			return nil, servererrs.ErrData.WrapMsg("LogModel id gen error")
+			return nil, servererrs.ErrData.WrapMsg("Log id gen error")
 		}
 		dbLogs = append(dbLogs, &log)
 	}
@@ -105,12 +105,12 @@ func (t *thirdServer) DeleteLogs(ctx context.Context, req *third.DeleteLogsReq) 
 	return &third.DeleteLogsResp{}, nil
 }
 
-func dbToPbLogInfos(logs []*relationtb.LogModel) []*third.LogInfo {
-	db2pbForLogInfo := func(log *relationtb.LogModel) *third.LogInfo {
+func dbToPbLogInfos(logs []*relationtb.Log) []*third.LogInfo {
+	db2pbForLogInfo := func(log *relationtb.Log) *third.LogInfo {
 		return &third.LogInfo{
 			Filename:   log.FileName,
 			UserID:     log.UserID,
-			Platform:   stringutil.StringToInt32(log.Platform),
+			Platform:   log.Platform,
 			Url:        log.Url,
 			CreateTime: log.CreateTime.UnixMilli(),
 			LogID:      log.LogID,
