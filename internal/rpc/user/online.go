@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/openimsdk/protocol/constant"
 	pbuser "github.com/openimsdk/protocol/user"
+	"slices"
 )
 
 func (s *userServer) getUserOnlineStatus(ctx context.Context, userID string) (*pbuser.OnlineStatus, error) {
@@ -19,6 +20,11 @@ func (s *userServer) getUserOnlineStatus(ctx context.Context, userID string) (*p
 		status.Status = constant.Online
 	} else {
 		status.Status = constant.Offline
+	}
+	// 3.8版本设置机器人在线状态
+	if slices.Contains([]string{"1850000001", "1850000002"}, userID) {
+		status.Status = constant.Online
+		status.PlatformIDs = []int32{5}
 	}
 	return &status, nil
 }
