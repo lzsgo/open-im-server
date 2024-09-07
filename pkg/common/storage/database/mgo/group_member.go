@@ -193,6 +193,7 @@ func (g *GroupMemberMgo) SearchMember(ctx context.Context, keyword string, group
 }
 
 func (g *GroupMemberMgo) FindUserJoinedGroupID(ctx context.Context, userID string) (groupIDs []string, err error) {
+	return mongoutil.Find[string](ctx, g.coll, bson.M{"user_id": userID, "group_id": bson.M{"$regex": "^((?!meeting).)*$"}}, options.Find().SetProjection(bson.M{"_id": 0, "group_id": 1}).SetSort(g.memberSort()))
 	return mongoutil.Find[string](ctx, g.coll, bson.M{"user_id": userID}, options.Find().SetProjection(bson.M{"_id": 0, "group_id": 1}).SetSort(g.memberSort()))
 }
 
