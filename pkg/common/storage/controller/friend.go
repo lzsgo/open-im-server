@@ -293,6 +293,7 @@ func (f *friendDatabase) AgreeFriendRequest(ctx context.Context, friendRequest *
 					FriendUserID:   friendRequest.ToUserID,
 					AddSource:      int32(constant.BecomeFriendByApply),
 					OperatorUserID: friendRequest.FromUserID,
+					Ex:             fr.Ex,
 				},
 			)
 		}
