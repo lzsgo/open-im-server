@@ -92,6 +92,10 @@ type Ios struct {
 		Sound string `json:"sound"`
 		Alert Alert  `json:"alert"`
 	} `json:"aps"`
+	Voip struct {
+		Caller string `json:"caller"`
+		CallId string `json:"call_id"`
+	}
 }
 
 type Alert struct {
