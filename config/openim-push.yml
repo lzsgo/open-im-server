@@ -36,7 +36,7 @@ jpns:
 iosPush:
       pushSound: "xxx"
       badgeCount: true
-      production: false
+      production: true
 
 
 
