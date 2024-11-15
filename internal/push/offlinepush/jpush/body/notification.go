@@ -22,6 +22,11 @@ type Notification struct {
 	Alert   string  `json:"alert,omitempty"`
 	Android Android `json:"android,omitempty"`
 	IOS     Ios     `json:"ios,omitempty"`
+	Voip    *Voip   `json:"voip,omitempty"`
+}
+
+type Voip struct {
+	CustomType int `json:"CustomType"`
 }
 
 type Android struct {

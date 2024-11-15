@@ -17,6 +17,7 @@ package jpush
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"github.com/openimsdk/open-im-server/v3/internal/push/offlinepush/options"
 
@@ -80,10 +81,18 @@ func (j *JPush) Push(ctx context.Context, userIDs []string, title, content strin
 	var pushObj body.PushObj
 	pushObj.SetPlatform(&pf)
 	pushObj.SetAudience(&au)
+	if opts.IsVoip {
+		var voip = new(body.Voip)
+		voip.CustomType = opts.VoipData.CustomType
+		no.Voip = voip
+
+	}
 	pushObj.SetNotification(&no)
 	pushObj.SetMessage(&msg)
 	pushObj.SetOptions(&opt)
 	var resp any
+	marshal, _ := json.Marshal(pushObj)
+	fmt.Printf("string(marshal) : %v \n", string(marshal))
 	return j.request(ctx, pushObj, resp, 5)
 }
 

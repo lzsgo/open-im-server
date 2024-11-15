@@ -8,6 +8,11 @@ type Opts struct {
 	Ex            string
 	Data          string
 	IsGroup       bool
+	IsVoip        bool
+	VoipData      VoipData
+}
+type VoipData struct {
+	CustomType int `json:"customType"`
 }
 
 // Signal message id.
