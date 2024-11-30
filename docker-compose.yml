@@ -116,7 +116,7 @@ services:
     environment:
       TZ: Asia/Shanghai
       MINIO_ROOT_USER: root
-      MINIO_ROOT_PASSWORD: openIM123
+      MINIO_ROOT_PASSWORD: KeChatOpenIM123
     restart: always
     command: minio server /data --console-address ':9090'
     networks:
