@@ -2,6 +2,7 @@ package push
 
 import (
 	"context"
+
 	"github.com/openimsdk/open-im-server/v3/internal/push/offlinepush"
 	"github.com/openimsdk/open-im-server/v3/pkg/common/config"
 	"github.com/openimsdk/open-im-server/v3/pkg/common/storage/cache/redis"
@@ -13,16 +14,17 @@ import (
 )
 
 type pushServer struct {
+	pbpush.UnimplementedPushMsgServiceServer
 	database      controller.PushDatabase
 	disCov        discovery.SvcDiscoveryRegistry
 	offlinePusher offlinepush.OfflinePusher
 	pushCh        *ConsumerHandler
+	offlinePushCh *OfflinePushConsumerHandler
 }
 
 type Config struct {
 	RpcConfig          config.Push
 	RedisConfig        config.Redis
-	MongodbConfig      config.Mongo
 	KafkaConfig        config.Kafka
 	NotificationConfig config.Notification
 	Share              config.Share
@@ -30,11 +32,8 @@ type Config struct {
 	LocalCacheConfig   config.LocalCache
 	Discovery          config.Discovery
 	FcmConfigPath      string
-}
 
-func (p pushServer) PushMsg(ctx context.Context, req *pbpush.PushMsgReq) (*pbpush.PushMsgResp, error) {
-	//todo reserved Interface
-	return nil, nil
+	runTimeEnv string
 }
 
 func (p pushServer) DelUserPushToken(ctx context.Context,
@@ -55,18 +54,30 @@ func Start(ctx context.Context, config *Config, client discovery.SvcDiscoveryReg
 	if err != nil {
 		return err
 	}
-	database := controller.NewPushDatabase(cacheModel)
 
-	consumer, err := NewConsumerHandler(config, offlinePusher, rdb, client)
+	database := controller.NewPushDatabase(cacheModel, &config.KafkaConfig)
+
+	consumer, err := NewConsumerHandler(ctx, config, database, offlinePusher, rdb, client)
 	if err != nil {
 		return err
 	}
+
+	offlinePushConsumer, err := NewOfflinePushConsumerHandler(config, offlinePusher)
+	if err != nil {
+		return err
+	}
+
 	pbpush.RegisterPushMsgServiceServer(server, &pushServer{
 		database:      database,
 		disCov:        client,
 		offlinePusher: offlinePusher,
 		pushCh:        consumer,
+		offlinePushCh: offlinePushConsumer,
 	})
+
 	go consumer.pushConsumerGroup.RegisterHandleAndConsumer(ctx, consumer)
+
+	go offlinePushConsumer.OfflinePushConsumerGroup.RegisterHandleAndConsumer(ctx, offlinePushConsumer)
+
 	return nil
 }

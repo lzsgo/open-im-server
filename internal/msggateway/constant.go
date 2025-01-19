@@ -27,6 +27,12 @@ const (
 	GzipCompressionProtocol = "gzip"
 	BackgroundStatus        = "isBackground"
 	SendResponse            = "isMsgResp"
+	SDKType                 = "sdkType"
+)
+
+const (
+	GoSDK = "go"
+	JsSDK = "js"
 )
 
 const (
@@ -39,6 +45,9 @@ const (
 	WSPullMsgBySeqList    = 1002
 	WSSendMsg             = 1003
 	WSSendSignalMsg       = 1004
+	WSPullMsg             = 1005
+	WSGetConvMaxReadSeq   = 1006
+	WsPullConvLastMessage = 1007
 	WSPushMsg             = 2001
 	WSKickOnlineMsg       = 2002
 	WsLogoutMsg           = 2003

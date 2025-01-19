@@ -1,26 +1,9 @@
-// Copyright © 2023 OpenIM. All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package msggateway
 
 import (
 	"context"
 	"fmt"
-	"github.com/openimsdk/open-im-server/v3/pkg/common/webhook"
-	"github.com/openimsdk/open-im-server/v3/pkg/rpccache"
-	pbAuth "github.com/openimsdk/protocol/auth"
-	"github.com/openimsdk/tools/mcontext"
+	"github.com/openimsdk/open-im-server/v3/pkg/rpcli"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -29,12 +12,15 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/openimsdk/open-im-server/v3/pkg/common/prommetrics"
 	"github.com/openimsdk/open-im-server/v3/pkg/common/servererrs"
-	"github.com/openimsdk/open-im-server/v3/pkg/rpcclient"
+	"github.com/openimsdk/open-im-server/v3/pkg/common/webhook"
+	"github.com/openimsdk/open-im-server/v3/pkg/rpccache"
+	pbAuth "github.com/openimsdk/protocol/auth"
 	"github.com/openimsdk/protocol/constant"
 	"github.com/openimsdk/protocol/msggateway"
 	"github.com/openimsdk/tools/discovery"
 	"github.com/openimsdk/tools/errs"
 	"github.com/openimsdk/tools/log"
+	"github.com/openimsdk/tools/mcontext"
 	"github.com/openimsdk/tools/utils/stringutil"
 	"golang.org/x/sync/errgroup"
 )
@@ -45,13 +31,12 @@ type LongConnServer interface {
 	GetUserAllCons(userID string) ([]*Client, bool)
 	GetUserPlatformCons(userID string, platform int) ([]*Client, bool, bool)
 	Validate(s any) error
-	SetDiscoveryRegistry(client discovery.SvcDiscoveryRegistry, config *Config)
+	SetDiscoveryRegistry(ctx context.Context, client discovery.SvcDiscoveryRegistry, config *Config) error
 	KickUserConn(client *Client) error
 	UnRegister(c *Client)
 	SetKickHandlerInfo(i *kickHandler)
 	SubUserOnlineStatus(ctx context.Context, client *Client, data *Req) ([]byte, error)
 	Compressor
-	Encoder
 	MessageHandler
 }
 
@@ -71,13 +56,13 @@ type WsServer struct {
 	handshakeTimeout  time.Duration
 	writeBufferSize   int
 	validate          *validator.Validate
-	userClient        *rpcclient.UserRpcClient
-	authClient        *rpcclient.Auth
 	disCov            discovery.SvcDiscoveryRegistry
 	Compressor
-	Encoder
+	//Encoder
 	MessageHandler
 	webhookClient *webhook.Client
+	userClient    *rpcli.UserClient
+	authClient    *rpcli.AuthClient
 }
 
 type kickHandler struct {
@@ -86,12 +71,28 @@ type kickHandler struct {
 	newClient  *Client
 }
 
-func (ws *WsServer) SetDiscoveryRegistry(disCov discovery.SvcDiscoveryRegistry, config *Config) {
-	ws.MessageHandler = NewGrpcHandler(ws.validate, disCov, &config.Share.RpcRegisterName)
-	u := rpcclient.NewUserRpcClient(disCov, config.Share.RpcRegisterName.User, config.Share.IMAdminUserID)
-	ws.authClient = rpcclient.NewAuth(disCov, config.Share.RpcRegisterName.Auth)
-	ws.userClient = &u
+func (ws *WsServer) SetDiscoveryRegistry(ctx context.Context, disCov discovery.SvcDiscoveryRegistry, config *Config) error {
+	userConn, err := disCov.GetConn(ctx, config.Share.RpcRegisterName.User)
+	if err != nil {
+		return err
+	}
+	pushConn, err := disCov.GetConn(ctx, config.Share.RpcRegisterName.Push)
+	if err != nil {
+		return err
+	}
+	authConn, err := disCov.GetConn(ctx, config.Share.RpcRegisterName.Auth)
+	if err != nil {
+		return err
+	}
+	msgConn, err := disCov.GetConn(ctx, config.Share.RpcRegisterName.Msg)
+	if err != nil {
+		return err
+	}
+	ws.userClient = rpcli.NewUserClient(userConn)
+	ws.authClient = rpcli.NewAuthClient(authConn)
+	ws.MessageHandler = NewGrpcHandler(ws.validate, rpcli.NewMsgClient(msgConn), rpcli.NewPushMsgServiceClient(pushConn))
 	ws.disCov = disCov
+	return nil
 }
 
 //func (ws *WsServer) SetUserOnlineStatus(ctx context.Context, client *Client, status int32) {
@@ -149,7 +150,6 @@ func NewWsServer(msgGatewayConfig *Config, opts ...Option) *WsServer {
 		clients:         newUserMap(),
 		subscription:    newSubscription(),
 		Compressor:      NewGzipCompressor(),
-		Encoder:         NewGobEncoder(),
 		webhookClient:   webhook.NewWebhookClient(msgGatewayConfig.WebhooksConfig.URL),
 	}
 }
@@ -212,7 +212,6 @@ func (ws *WsServer) sendUserOnlineInfoToOtherNode(ctx context.Context, client *C
 	if err != nil {
 		return err
 	}
-
 	wg := errgroup.Group{}
 	wg.SetLimit(concurrentRequest)
 
@@ -265,7 +264,7 @@ func (ws *WsServer) registerClient(client *Client) {
 		if clientOK {
 			ws.clients.Set(client.UserID, client)
 			// There is already a connection to the platform
-			log.ZInfo(client.ctx, "repeat login", "userID", client.UserID, "platformID",
+			log.ZDebug(client.ctx, "repeat login", "userID", client.UserID, "platformID",
 				client.PlatformID, "old remote addr", getRemoteAdders(oldClients))
 			ws.onlineUserConnNum.Add(1)
 		} else {
@@ -275,7 +274,7 @@ func (ws *WsServer) registerClient(client *Client) {
 	}
 
 	wg := sync.WaitGroup{}
-	log.ZDebug(client.ctx, "ws.msgGatewayConfig.Discovery.Enable", ws.msgGatewayConfig.Discovery.Enable)
+	log.ZDebug(client.ctx, "ws.msgGatewayConfig.Discovery.Enable", "discoveryEnable", ws.msgGatewayConfig.Discovery.Enable)
 
 	if ws.msgGatewayConfig.Discovery.Enable != "k8s" {
 		wg.Add(1)
@@ -293,14 +292,7 @@ func (ws *WsServer) registerClient(client *Client) {
 
 	wg.Wait()
 
-	log.ZInfo(
-		client.ctx,
-		"user online",
-		"online user Num",
-		ws.onlineUserNum.Load(),
-		"online user conn Num",
-		ws.onlineUserConnNum.Load(),
-	)
+	log.ZDebug(client.ctx, "user online", "online user Num", ws.onlineUserNum.Load(), "online user conn Num", ws.onlineUserConnNum.Load())
 }
 
 func getRemoteAdders(client []*Client) string {
@@ -321,7 +313,26 @@ func (ws *WsServer) KickUserConn(client *Client) error {
 }
 
 func (ws *WsServer) multiTerminalLoginChecker(clientOK bool, oldClients []*Client, newClient *Client) {
-	switch ws.msgGatewayConfig.MsgGateway.MultiLoginPolicy {
+	kickTokenFunc := func(kickClients []*Client) {
+		var kickTokens []string
+		ws.clients.DeleteClients(newClient.UserID, kickClients)
+		for _, c := range kickClients {
+			kickTokens = append(kickTokens, c.token)
+			err := c.KickOnlineMessage()
+			if err != nil {
+				log.ZWarn(c.ctx, "KickOnlineMessage", err)
+			}
+		}
+		ctx := mcontext.WithMustInfoCtx(
+			[]string{newClient.ctx.GetOperationID(), newClient.ctx.GetUserID(),
+				constant.PlatformIDToName(newClient.PlatformID), newClient.ctx.GetConnID()},
+		)
+		if err := ws.authClient.KickTokens(ctx, kickTokens); err != nil {
+			log.ZWarn(newClient.ctx, "kickTokens err", err)
+		}
+	}
+
+	switch ws.msgGatewayConfig.Share.MultiLogin.Policy {
 	case constant.DefalutNotKick:
 	case constant.PCAndOther:
 		if constant.PlatformIDToClass(newClient.PlatformID) == constant.TerminalPC {
@@ -343,10 +354,29 @@ func (ws *WsServer) multiTerminalLoginChecker(clientOK bool, oldClients []*Clien
 			[]string{newClient.ctx.GetOperationID(), newClient.ctx.GetUserID(),
 				constant.PlatformIDToName(newClient.PlatformID), newClient.ctx.GetConnID()},
 		)
-		if _, err := ws.authClient.InvalidateToken(ctx, newClient.token, newClient.UserID, newClient.PlatformID); err != nil {
+		req := &pbAuth.InvalidateTokenReq{
+			PreservedToken: newClient.token,
+			UserID:         newClient.UserID,
+			PlatformID:     int32(newClient.PlatformID),
+		}
+		if err := ws.authClient.InvalidateToken(ctx, req); err != nil {
 			log.ZWarn(newClient.ctx, "InvalidateToken err", err, "userID", newClient.UserID,
 				"platformID", newClient.PlatformID)
 		}
+	case constant.AllLoginButSameClassKick:
+		clients, ok := ws.clients.GetAll(newClient.UserID)
+		if !ok {
+			return
+		}
+		var (
+			kickClients []*Client
+		)
+		for _, client := range clients {
+			if constant.PlatformIDToClass(client.PlatformID) == constant.PlatformIDToClass(newClient.PlatformID) {
+				kickClients = append(kickClients, client)
+			}
+		}
+		kickTokenFunc(kickClients)
 	}
 }
 
@@ -360,7 +390,7 @@ func (ws *WsServer) unregisterClient(client *Client) {
 	ws.onlineUserConnNum.Add(-1)
 	ws.subscription.DelClient(client)
 	//ws.SetUserOnlineStatus(client.ctx, client, constant.Offline)
-	log.ZInfo(client.ctx, "user offline", "close reason", client.closedErr, "online user Num",
+	log.ZDebug(client.ctx, "user offline", "close reason", client.closedErr, "online user Num",
 		ws.onlineUserNum.Load(), "online user conn Num",
 		ws.onlineUserConnNum.Load(),
 	)
@@ -425,6 +455,7 @@ func (ws *WsServer) wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.ZDebug(connContext, "new conn", "token", connContext.GetToken())
 	// Create a WebSocket long connection object
 	wsLongConn := newGWebSocket(WebSocket, ws.handshakeTimeout, ws.writeBufferSize)
 	if err := wsLongConn.GenerateLongConn(w, r); err != nil {

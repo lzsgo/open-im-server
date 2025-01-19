@@ -18,9 +18,9 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"github.com/openimsdk/open-im-server/v3/internal/push/offlinepush/options"
 
 	"github.com/openimsdk/open-im-server/v3/internal/push/offlinepush/jpush/body"
+	"github.com/openimsdk/open-im-server/v3/internal/push/offlinepush/options"
 	"github.com/openimsdk/open-im-server/v3/pkg/common/config"
 	"github.com/openimsdk/tools/utils/httputil"
 )
@@ -57,53 +57,51 @@ func (j *JPush) Push(ctx context.Context, userIDs []string, title, content strin
 	var au body.Audience
 	au.SetAlias(userIDs)
 	var no body.Notification
-	var extras body.Extras
+	extras := make(map[string]string)
+	extras["ex"] = opts.Ex
 	if opts.Signal.ClientMsgID != "" {
-		extras.ClientMsgID = opts.Signal.ClientMsgID
+		extras["ClientMsgID"] = opts.Signal.ClientMsgID
 	}
-	if opts.Data != "" {
-		extras.Data = opts.Data
-		extras.IsGroup = opts.IsGroup
-	}
-	no.SetTitle(title)
-	no.SetBadgeAddNum()
-	//no.SetBadgeSetNum()
 	no.IOSEnableMutableContent()
 	no.SetExtras(extras)
-	no.SetAlert(content)
+	no.SetAlert(content, title, opts)
 	no.SetAndroidIntent(j.pushConf)
 
 	var msg body.Message
 	msg.SetMsgContent(content)
+	msg.SetTitle(title)
+	if opts.Signal.ClientMsgID != "" {
+		msg.SetExtras("ClientMsgID", opts.Signal.ClientMsgID)
+	}
+	msg.SetExtras("ex", opts.Ex)
 	var opt body.Options
 	opt.SetApnsProduction(j.pushConf.IOSPush.Production)
 	var pushObj body.PushObj
 	pushObj.SetPlatform(&pf)
 	pushObj.SetAudience(&au)
-	if opts.IsVoip {
-		var voip = new(body.Voip)
-		voip.CustomType = opts.VoipData.CustomType
-		no.Voip = voip
-
-	}
 	pushObj.SetNotification(&no)
 	pushObj.SetMessage(&msg)
 	pushObj.SetOptions(&opt)
-	var resp any
-	//marshal, _ := json.Marshal(pushObj)
-	//fmt.Printf("string(marshal) : %v \n", string(marshal))
-	return j.request(ctx, pushObj, resp, 5)
+	var resp map[string]any
+	return j.request(ctx, pushObj, &resp, 5)
 }
 
-func (j *JPush) request(ctx context.Context, po body.PushObj, resp any, timeout int) error {
-	return j.httpClient.PostReturn(
+func (j *JPush) request(ctx context.Context, po body.PushObj, resp *map[string]any, timeout int) error {
+	err := j.httpClient.PostReturn(
 		ctx,
-		j.pushConf.JPNS.PushURL,
+		j.pushConf.JPush.PushURL,
 		map[string]string{
-			"Authorization": j.getAuthorization(j.pushConf.JPNS.AppKey, j.pushConf.JPNS.MasterSecret),
+			"Authorization": j.getAuthorization(j.pushConf.JPush.AppKey, j.pushConf.JPush.MasterSecret),
 		},
 		po,
 		resp,
 		timeout,
 	)
+	if err != nil {
+		return err
+	}
+	if (*resp)["sendno"] != "0" {
+		return fmt.Errorf("jpush push failed %v", resp)
+	}
+	return nil
 }

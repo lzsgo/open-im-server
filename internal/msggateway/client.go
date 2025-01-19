@@ -16,11 +16,13 @@ package msggateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"google.golang.org/protobuf/proto"
 
 	"github.com/openimsdk/open-im-server/v3/pkg/msgprocessor"
 	"github.com/openimsdk/protocol/constant"
@@ -30,7 +32,6 @@ import (
 	"github.com/openimsdk/tools/log"
 	"github.com/openimsdk/tools/mcontext"
 	"github.com/openimsdk/tools/utils/stringutil"
-	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -68,6 +69,8 @@ type Client struct {
 	IsCompress     bool   `json:"isCompress"`
 	UserID         string `json:"userID"`
 	IsBackground   bool   `json:"isBackground"`
+	SDKType        string `json:"sdkType"`
+	Encoder        Encoder
 	ctx            *UserConnContext
 	longConnServer LongConnServer
 	closed         atomic.Bool
@@ -93,10 +96,16 @@ func (c *Client) ResetClient(ctx *UserConnContext, conn LongConn, longConnServer
 	c.closed.Store(false)
 	c.closedErr = nil
 	c.token = ctx.GetToken()
+	c.SDKType = ctx.GetSDKType()
 	c.hbCtx, c.hbCancel = context.WithCancel(c.ctx)
 	c.subLock = new(sync.Mutex)
 	if c.subUserIDs != nil {
 		clear(c.subUserIDs)
+	}
+	if c.SDKType == GoSDK {
+		c.Encoder = NewGobEncoder()
+	} else {
+		c.Encoder = NewJsonEncoder()
 	}
 	c.subUserIDs = make(map[string]struct{})
 }
@@ -122,7 +131,7 @@ func (c *Client) readMessage() {
 	defer func() {
 		if r := recover(); r != nil {
 			c.closedErr = ErrPanic
-			fmt.Println("socket have panic err:", r, string(debug.Stack()))
+			log.ZPanic(c.ctx, "socket have panic err:", errs.ErrPanic(r))
 		}
 		c.close()
 	}()
@@ -158,9 +167,12 @@ func (c *Client) readMessage() {
 				return
 			}
 		case MessageText:
-			c.closedErr = ErrNotSupportMessageProtocol
-			return
-
+			_ = c.conn.SetReadDeadline(pongWait)
+			parseDataErr := c.handlerTextMessage(message)
+			if parseDataErr != nil {
+				c.closedErr = parseDataErr
+				return
+			}
 		case PingMessage:
 			err := c.writePongMsg("")
 			log.ZError(c.ctx, "writePongMsg", err)
@@ -187,7 +199,7 @@ func (c *Client) handleMessage(message []byte) error {
 	var binaryReq = getReq()
 	defer freeReq(binaryReq)
 
-	err := c.longConnServer.Decode(message, binaryReq)
+	err := c.Encoder.Decode(message, binaryReq)
 	if err != nil {
 		return err
 	}
@@ -220,6 +232,12 @@ func (c *Client) handleMessage(message []byte) error {
 		resp, messageErr = c.longConnServer.SendSignalMessage(ctx, binaryReq)
 	case WSPullMsgBySeqList:
 		resp, messageErr = c.longConnServer.PullMessageBySeqList(ctx, binaryReq)
+	case WSPullMsg:
+		resp, messageErr = c.longConnServer.GetSeqMessage(ctx, binaryReq)
+	case WSGetConvMaxReadSeq:
+		resp, messageErr = c.longConnServer.GetConversationsHasReadAndMaxSeq(ctx, binaryReq)
+	case WsPullConvLastMessage:
+		resp, messageErr = c.longConnServer.GetLastMessage(ctx, binaryReq)
 	case WsLogoutMsg:
 		resp, messageErr = c.longConnServer.UserLogout(ctx, binaryReq)
 	case WsSetBackgroundStatus:
@@ -271,11 +289,13 @@ func (c *Client) replyMessage(ctx context.Context, binaryReq *Req, err error, re
 		ErrMsg:        errResp.ErrMsg,
 		Data:          resp,
 	}
+	t := time.Now()
 	log.ZDebug(ctx, "gateway reply message", "resp", mReply.String())
 	err = c.writeBinaryMsg(mReply)
 	if err != nil {
 		log.ZWarn(ctx, "wireBinaryMsg replyMessage", err, "resp", mReply.String())
 	}
+	log.ZDebug(ctx, "wireBinaryMsg end", "time cost", time.Since(t))
 
 	if binaryReq.ReqIdentifier == WsLogoutMsg {
 		return errs.New("user logout", "operationID", binaryReq.OperationID).Wrap()
@@ -328,7 +348,7 @@ func (c *Client) writeBinaryMsg(resp Resp) error {
 		return nil
 	}
 
-	encodedBuf, err := c.longConnServer.Encode(resp)
+	encodedBuf, err := c.Encoder.Encode(resp)
 	if err != nil {
 		return err
 	}
@@ -356,6 +376,11 @@ func (c *Client) writeBinaryMsg(resp Resp) error {
 func (c *Client) activeHeartbeat(ctx context.Context) {
 	if c.PlatformID == constant.WebPlatformID {
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.ZPanic(ctx, "activeHeartbeat Panic", errs.ErrPanic(r))
+				}
+			}()
 			log.ZDebug(ctx, "server initiative send heartbeat start.")
 			ticker := time.NewTicker(pingPeriod)
 			defer ticker.Stop()
@@ -411,4 +436,29 @@ func (c *Client) writePongMsg(appData string) error {
 	}
 
 	return errs.Wrap(err)
+}
+
+func (c *Client) handlerTextMessage(b []byte) error {
+	var msg TextMessage
+	if err := json.Unmarshal(b, &msg); err != nil {
+		return err
+	}
+	switch msg.Type {
+	case TextPong:
+		return nil
+	case TextPing:
+		msg.Type = TextPong
+		msgData, err := json.Marshal(msg)
+		if err != nil {
+			return err
+		}
+		c.w.Lock()
+		defer c.w.Unlock()
+		if err := c.conn.SetWriteDeadline(writeWait); err != nil {
+			return err
+		}
+		return c.conn.WriteMessage(MessageText, msgData)
+	default:
+		return fmt.Errorf("not support message type %s", msg.Type)
+	}
 }
