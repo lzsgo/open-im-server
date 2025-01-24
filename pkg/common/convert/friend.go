@@ -58,7 +58,6 @@ func FriendsDB2Pb(ctx context.Context, friendsDB []*model.Friend, getUsers func(
 	}
 	var userID []string
 	for _, friendDB := range friendsDB {
-		fmt.Printf("userID : %v \n", userID)
 		userID = append(userID, friendDB.FriendUserID)
 	}
 
@@ -73,8 +72,6 @@ func FriendsDB2Pb(ctx context.Context, friendsDB []*model.Friend, getUsers func(
 			return nil, err
 		}
 
-		fmt.Printf("friend.FriendUserID : %v \n", friend.FriendUserID)
-		fmt.Printf("users : %v \n", users)
 		friendPb.FriendUser.UserID = users[friend.FriendUserID].UserID
 		friendPb.FriendUser.Nickname = users[friend.FriendUserID].Nickname
 		friendPb.FriendUser.FaceURL = users[friend.FriendUserID].FaceURL
