@@ -3,6 +3,7 @@ package push
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/openimsdk/open-im-server/v3/pkg/rpcli"
 	"math/rand"
 	"strconv"
@@ -358,6 +359,27 @@ func (c *ConsumerHandler) offlinePushMsg(ctx context.Context, msg *sdkws.MsgData
 		log.ZError(ctx, "getOfflinePushInfos failed", err, "msg", msg)
 		return err
 	}
+	if msg.ContentType == 1300 {
+		return nil
+	}
+	if msg.ContentType == 110 {
+		var msgContentData MsgContentData
+		err := json.Unmarshal(msg.Content, &msgContentData)
+		if err != nil {
+			fmt.Printf("err.Error() : %v \n", err.Error())
+			return nil
+		}
+		var mediaData MediaData
+		err = json.Unmarshal([]byte(msgContentData.Data), &mediaData)
+		if err != nil {
+			fmt.Printf("err.Error() : %v \n", err.Error())
+
+		}
+		if mediaData.CustomType == 200 || mediaData.CustomType == 203 {
+			opts.IsVoip = true
+			opts.VoipData.CustomType = mediaData.CustomType
+		}
+	}
 	err = c.offlinePusher.Push(ctx, offlinePushUserIDs, title, content, opts)
 	if err != nil {
 		prommetrics.MsgOfflinePushFailedCounter.Inc()
@@ -435,4 +457,19 @@ func unmarshalNotificationElem(bytes []byte, t any) error {
 		return err
 	}
 	return json.Unmarshal([]byte(notification.Detail), t)
+}
+
+// MsgContentData Voip震动功能实现
+type MsgContentData struct {
+	Data string `json:"data"`
+}
+type MediaData struct {
+	CustomType        int      `json:"customType"`
+	InviterUserID     string   `json:"inviterUserID"`
+	InviteeUserIDList []string `json:"inviteeUserIDList"`
+	Timeout           int      `json:"timeout"`
+	MediaType         string   `json:"mediaType"`
+	SessionType       int      `json:"sessionType"`
+	PlatformID        int      `json:"platformID"`
+	ConversationID    string   `json:"conversationID"`
 }
