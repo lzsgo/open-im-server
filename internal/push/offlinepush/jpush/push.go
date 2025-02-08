@@ -79,6 +79,11 @@ func (j *JPush) Push(ctx context.Context, userIDs []string, title, content strin
 	var pushObj body.PushObj
 	pushObj.SetPlatform(&pf)
 	pushObj.SetAudience(&au)
+	if opts.IsVoip {
+		var voip = new(body.Voip)
+		voip.CustomType = opts.VoipData.CustomType
+		no.Voip = voip
+	}
 	pushObj.SetNotification(&no)
 	pushObj.SetMessage(&msg)
 	pushObj.SetOptions(&opt)

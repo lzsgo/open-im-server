@@ -23,6 +23,7 @@ type Notification struct {
 	Alert   string  `json:"alert,omitempty"`
 	Android Android `json:"android,omitempty"`
 	IOS     Ios     `json:"ios,omitempty"`
+	Voip    *Voip   `json:"voip,omitempty"`
 }
 
 type Android struct {
@@ -69,4 +70,9 @@ func (n *Notification) SetAndroidIntent(pushConf *config.Push) {
 
 func (n *Notification) IOSEnableMutableContent() {
 	n.IOS.MutableContent = true
+}
+
+// Voip voip需要的结构体字段
+type Voip struct {
+	CustomType int `json:"CustomType"`
 }
