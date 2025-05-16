@@ -39,7 +39,7 @@ joinGroupApplication:
     ext: joinGroupApplication ext
 
 memberQuit:
-  isSendMsg: true
+  isSendMsg: false
   reliabilityLevel: 1
   unreadCount: false
   offlinePush:
@@ -270,7 +270,7 @@ blackDeleted:
   reliabilityLevel: 1
   unreadCount: false
   offlinePush:
-    enable: true
+    enable: false
     title: Remove a blocked user
     desc: Remove a blocked user
     ext: Remove a blocked user
